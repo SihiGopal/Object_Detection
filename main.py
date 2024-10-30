@@ -1,55 +1,45 @@
-import tkinter as tk
-from tkinter import messagebox
+import cv2
 
-# Caesar Cipher Encrypt function
-def encrypt_message():
-    message = entry_message.get()
-    shift = int(entry_shift.get())
-    encrypted_text = "".join(
-        chr((ord(char) - 65 + shift) % 26 + 65) if char.isupper() else
-        chr((ord(char) - 97 + shift) % 26 + 97) if char.islower() else char
-        for char in message
-    )
-    entry_result.delete(0, tk.END)
-    entry_result.insert(0, encrypted_text)
+# Load the video file or capture device (0 for the default camera)
+video = cv2.VideoCapture("input/video_1.mp4")
 
-# Caesar Cipher Decrypt function
-def decrypt_message():
-    message = entry_message.get()
-    shift = int(entry_shift.get())
-    decrypted_text = "".join(
-        chr((ord(char) - 65 - shift) % 26 + 65) if char.isupper() else
-        chr((ord(char) - 97 - shift) % 26 + 97) if char.islower() else char
-        for char in message
-    )
-    entry_result.delete(0, tk.END)
-    entry_result.insert(0, decrypted_text)
+# Initialize the background subtractor (use MOG2 or KNN for better results)
+background_subtractor = cv2.createBackgroundSubtractorMOG2()
 
-# Tkinter GUI setup
-root = tk.Tk()
-root.title("Secret Message Encryption and Decryption Tool")
+while True:
+    # Read a frame from the video
+    ret, frame = video.read()
 
-# Message Label and Entry
-tk.Label(root, text="Enter Message:").grid(row=0, column=0, padx=10, pady=10)
-entry_message = tk.Entry(root, width=40)
-entry_message.grid(row=0, column=1, padx=10, pady=10)
+    # Break the loop if no frame is returned (end of video)
+    if not ret:
+        break
 
-# Shift Label and Entry
-tk.Label(root, text="Enter Shift (key):").grid(row=1, column=0, padx=10, pady=10)
-entry_shift = tk.Entry(root, width=40)
-entry_shift.grid(row=1, column=1, padx=10, pady=10)
+    # Apply background subtraction to get the foreground mask
+    fg_mask = background_subtractor.apply(frame)
 
-# Result Label and Entry
-tk.Label(root, text="Result:").grid(row=2, column=0, padx=10, pady=10)
-entry_result = tk.Entry(root, width=40)
-entry_result.grid(row=2, column=1, padx=10, pady=10)
+    # Remove noise using morphological operations
+    fg_mask = cv2.morphologyEx(fg_mask, cv2.MORPH_OPEN, None)
+    fg_mask = cv2.morphologyEx(fg_mask, cv2.MORPH_DILATE, None)
 
-# Encrypt and Decrypt Buttons
-btn_encrypt = tk.Button(root, text="Encrypt", command=encrypt_message)
-btn_encrypt.grid(row=3, column=0, padx=10, pady=10)
+    # Find contours of the moving objects in the foreground mask
+    contours, _ = cv2.findContours(fg_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-btn_decrypt = tk.Button(root, text="Decrypt", command=decrypt_message)
-btn_decrypt.grid(row=3, column=1, padx=10, pady=10)
+    # Loop over each detected contour
+    for contour in contours:
+        # Ignore small contours to reduce false detections
+        if cv2.contourArea(contour) > 500:  # Adjust threshold as needed
+            # Get bounding box coordinates for each detected moving object
+            x, y, w, h = cv2.boundingRect(contour)
+            # Draw a rectangle around the moving object
+            cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
 
-# Run the Tkinter event loop
-root.mainloop()
+    # Display the frame with detected moving objects
+    cv2.imshow("Moving Object Tracking", frame)
+
+    # Press 'q' to exit the video window
+    if cv2.waitKey(30) & 0xFF == ord('q'):
+        break
+
+# Release the video capture object and close all windows
+video.release()
+cv2.destroyAllWindows()
